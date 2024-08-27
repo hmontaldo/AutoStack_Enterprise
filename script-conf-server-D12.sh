@@ -101,7 +101,7 @@ EOF
 # Fonction pour installer et configurer cron-apt
 install_configure_cron_apt() {
     echo "Installation de cron-apt..."
-    apt update
+    apt update && apt upgrade -y
     apt install cron-apt -y
 
     if [ $? -eq 0 ]; then
@@ -129,6 +129,47 @@ EOF
     fi
 }
 
+# Fonction pour installer et configurer portsentry
+install_configure_portsentry() {
+    echo "Voulez-vous installer et configurer portsentry ? (y/N)"
+    read -r -n 1 -t 10 -s -p "" response
+    if [[ "$response" =~ ^([yY][eE][sS]|[yY])$ ]]
+    then
+        echo "Installation de portsentry..."
+        apt update && apt upgrade -y
+        apt install portsentry -y
+
+        if [ $? -eq 0 ]; then
+            echo "portsentry a été installé avec succès."
+
+            # Configuration de portsentry
+            sed -i 's/TCP_MODE="tcp"/TCP_MODE="atcp"/' /etc/default/portsentry
+            sed -i 's/UDP_MODE="udp"/UDP_MODE="audp"/' /etc/default/portsentry
+
+            # Configuration du fichier portsentry.conf
+            sed -i 's/BLOCK_UDP="0"/BLOCK_UDP="1"/' /etc/portsentry/portsentry.conf
+            sed -i 's/BLOCK_TCP="0"/BLOCK_TCP="1"/' /etc/portsentry/portsentry.conf
+            sed -i 's/KILL_ROUTE=""/KILL_ROUTE="\/sbin\/route add -host $TARGET$ reject"/' /etc/portsentry/portsentry.conf
+            sed -i 's/KILL_HOSTS_DENY=""/KILL_HOSTS_DENY="ALL: $TARGET$ : DENY"/' /etc/portsentry/portsentry.conf
+
+            # Configuration pour utiliser iptables
+            echo 'KILL_RUN_CMD="/sbin/iptables -I INPUT -s $TARGET$ -j DROP && /sbin/iptables -I INPUT -s $TARGET$ -m limit --limit 3/minute --limit-burst 5 -j LOG --log-level debug --log-prefix '"'Portsentry: dropping: '"'"' >> /etc/portsentry/portsentry.conf
+
+            # Correction du niveau de log
+            sed -i 's/--log-level DEBUG/--log-level debug/' /etc/portsentry/portsentry.conf
+
+            # Redémarrage du service portsentry
+            systemctl restart portsentry
+
+            echo "portsentry a été configuré avec succès."
+        else
+            echo "Erreur lors de l'installation de portsentry."
+            return 1
+        fi
+    else
+        echo "Installation de portsentry annulée."
+    fi
+}
 
 # Exécution des fonctions
 change_ssh_port
@@ -137,3 +178,4 @@ disable_default_user
 install_rsync
 install_configure_fail2ban
 install_configure_cron_apt
+install_configure_portsentry
